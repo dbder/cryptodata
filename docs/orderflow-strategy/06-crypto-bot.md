@@ -56,9 +56,30 @@ XRP, ADA): 84 trades, PF 1.10, ≈ break-even.
 
 That is the expected shape of a v1: the candle proxy captures the *location*
 logic but not the *confirmation* edge, and the video's own numbers (60–65%
-win rate) come from reading real order flow. The path forward, in order:
+win rate) come from reading real order flow.
 
-1. let `TradeTapeCollector` run for a few weeks,
-2. build a delta-based `EntryTrigger` on `CandleDelta`,
-3. compare it against `AbsorptionProxyTrigger` on the same window — only the
-   tape-covered period, honestly — before any thought of live orders.
+## Experiment round 1 (2026-09-07, `OrderflowExperiment`)
+
+Ten one-factor variants plus fee checks and higher timeframes, judged on a
+time split: in-sample before 2025-09-01, out-of-sample after. Full tables in
+the class; the conclusions that matter:
+
+| Finding | Evidence |
+|---|---|
+| **The gross signal is ~breakeven; fees eat it.** | fee=0 → PF **1.25** IS / **1.05** OOS; at 0.25% taker → 0.74 / 0.54. Avg loss −€0.35/trade vs €0.50 round-trip fees on a €100 stake. |
+| No knob flips it. All ten variants lose IS *and* OOS. | Best OOS was EXPLOSIVE-regime-only (PF 0.73) — least bad, matching the video's negative-gamma logic, but still losing. |
+| The break-even move hurts. | Without it: 34% OOS win rate vs 28%, PF 0.64 vs 0.54. Pullbacks shake out winners. |
+| Wider targets (minRR 1.5–2.0) make it worse. | Win rate collapses to 17–20%; the proxy's zones don't earn far targets. |
+| 1d execution *looks* great IS (PF 1.40–1.71) and fails OOS (0.50–0.62). | ~70 trades IS — small sample plus a friendly period. A textbook overfit warning, not a discovery. |
+
+**Verdict:** the OHLCV proxy has no exploitable edge after costs, and knob
+tuning cannot create one. Profitability has to come from (in this order):
+
+1. **The real confirmation layer** — run `TradeTapeCollector` for weeks, build
+   a delta-based `EntryTrigger` on `CandleDelta`, compare it against the proxy
+   on the tape-covered window only. This is where the video's edge lives.
+2. **Cost reduction** — maker/limit entries (0.15% vs 0.25% halves the drag:
+   PF 0.90/0.70) once execution is ever real; larger moves per trade so the
+   fixed cost matters less.
+3. **The EXPLOSIVE-regime filter** — the one filter that was consistently
+   least bad on both sides of the split; revisit once 1+2 exist.

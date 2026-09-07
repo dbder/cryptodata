@@ -37,10 +37,42 @@ public final class OrderflowStrategy {
             int stopAfterLossesInRow,    // per UTC day, the "stop after two losses" tripwire
             double minVolumePercentile,  // participation filter, the 20k-contracts stand-in
             double stakeEur,
-            double fee                   // per side, like the webapp simulation
+            double fee,                  // per side, like the webapp simulation
+            Environment.Regime requiredRegime,   // only trade in this regime; null = any
+            boolean moveToBreakEven      // stop to entry once +1R trades
     ) {
         public static Config defaults() {
-            return new Config(90, 120, 100, 1.0, 2, 2, 0.30, 100, 0.0025);
+            return new Config(90, 120, 100, 1.0, 2, 2, 0.30, 100, 0.0025, null, true);
+        }
+
+        public Config withMinRewardRisk(double v) {
+            return new Config(structureCandles, profileWindow, swingLookback, v, maxTradesPerDay,
+                    stopAfterLossesInRow, minVolumePercentile, stakeEur, fee, requiredRegime, moveToBreakEven);
+        }
+
+        public Config withMinVolumePercentile(double v) {
+            return new Config(structureCandles, profileWindow, swingLookback, minRewardRisk, maxTradesPerDay,
+                    stopAfterLossesInRow, v, stakeEur, fee, requiredRegime, moveToBreakEven);
+        }
+
+        public Config withProfileWindow(int v) {
+            return new Config(structureCandles, v, swingLookback, minRewardRisk, maxTradesPerDay,
+                    stopAfterLossesInRow, minVolumePercentile, stakeEur, fee, requiredRegime, moveToBreakEven);
+        }
+
+        public Config withRequiredRegime(Environment.Regime v) {
+            return new Config(structureCandles, profileWindow, swingLookback, minRewardRisk, maxTradesPerDay,
+                    stopAfterLossesInRow, minVolumePercentile, stakeEur, fee, v, moveToBreakEven);
+        }
+
+        public Config withMoveToBreakEven(boolean v) {
+            return new Config(structureCandles, profileWindow, swingLookback, minRewardRisk, maxTradesPerDay,
+                    stopAfterLossesInRow, minVolumePercentile, stakeEur, fee, requiredRegime, v);
+        }
+
+        public Config withFee(double v) {
+            return new Config(structureCandles, profileWindow, swingLookback, minRewardRisk, maxTradesPerDay,
+                    stopAfterLossesInRow, minVolumePercentile, stakeEur, v, requiredRegime, moveToBreakEven);
         }
     }
 
@@ -109,7 +141,8 @@ public final class OrderflowStrategy {
                     trades.add(closed);
                     lossesInRowToday = closed.eur() < 0 ? lossesInRowToday + 1 : 0;
                     open = null;
-                } else if (candle.high() >= open.entry() + (open.entry() - open.stop())) {
+                } else if (config.moveToBreakEven()
+                        && candle.high() >= open.entry() + (open.entry() - open.stop())) {
                     // +1R reached: stop to break-even, the trail-behind-aggression proxy.
                     open = withStop(open, Math.max(open.stop(), open.entry()));
                 }
@@ -128,6 +161,7 @@ public final class OrderflowStrategy {
                     Math.max(0, higherUpTo - config.structureCandles()), higherUpTo);
             Environment environment = environmentClassifier.classify(higher);
             if (environment.structure() != Environment.Structure.UP) continue;
+            if (config.requiredRegime() != null && environment.regime() != config.requiredRegime()) continue;
 
             VolumeProfile profile = VolumeProfile.of(execution.subList(i - config.profileWindow(), i));
             Optional<LocationFinder.DiscountZone> zone = locationFinder.find(

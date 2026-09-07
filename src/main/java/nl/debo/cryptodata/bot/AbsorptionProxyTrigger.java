@@ -27,9 +27,18 @@ import java.util.Optional;
 public final class AbsorptionProxyTrigger implements EntryTrigger {
 
     /** Candidate must close above this fraction of its own range (0.5 = upper half). */
-    private static final double MIN_CLOSE_POSITION = 0.5;
+    private final double minClosePosition;
     /** How many candles after the candidate the second test may come. */
-    private static final int SECOND_TEST_WINDOW = 5;
+    private final int secondTestWindow;
+
+    public AbsorptionProxyTrigger() {
+        this(0.5, 5);
+    }
+
+    public AbsorptionProxyTrigger(double minClosePosition, int secondTestWindow) {
+        this.minClosePosition = minClosePosition;
+        this.secondTestWindow = secondTestWindow;
+    }
 
     @Override
     public Optional<Entry> check(List<Kline> candles, int i, LocationFinder.DiscountZone zone) {
@@ -38,7 +47,7 @@ public final class AbsorptionProxyTrigger implements EntryTrigger {
             return Optional.empty();
         }
         // Walk back looking for the absorption candidate this candle confirms.
-        int from = Math.max(0, i - SECOND_TEST_WINDOW);
+        int from = Math.max(0, i - secondTestWindow);
         for (int a = i - 1; a >= from; a--) {
             Kline cand = candles.get(a);
             if (!isAbsorption(cand, zone)) continue;
@@ -49,11 +58,11 @@ public final class AbsorptionProxyTrigger implements EntryTrigger {
         return Optional.empty();
     }
 
-    private static boolean isAbsorption(Kline c, LocationFinder.DiscountZone zone) {
+    private boolean isAbsorption(Kline c, LocationFinder.DiscountZone zone) {
         double range = c.high() - c.low();
         if (range <= 0) return false;
         double closePosition = (c.close() - c.low()) / range;
-        return zone.contains(c.low()) && closePosition >= MIN_CLOSE_POSITION;
+        return zone.contains(c.low()) && closePosition >= minClosePosition;
     }
 
     /** True when any candle strictly between the two dipped under the candidate's low. */
