@@ -264,11 +264,14 @@ export default function Chart({ candles, series, buy, enabled, sim, ranged = fal
     for (const l of priceLinesRef.current) cs.removePriceLine(l);
     priceLinesRef.current = [];
     const mk = (price, color, title) => cs.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title });
-    // One trade: entry + stop + target. Several: entry lines only, to keep the price scale readable.
+    // One trade: entry + stop + target. Several: entry lines only, to keep the price scale
+    // readable. RSI exit mode has no target (and no stop unless its safety net is on), so
+    // only the levels the trade actually has are drawn.
     for (const t of active) {
       priceLinesRef.current.push(mk(t.entry, COLORS.gold, 'entry'));
       if (active.length === 1) {
-        priceLinesRef.current.push(mk(t.stopPrice, COLORS.down, 'stop'), mk(t.targetPrice, COLORS.up, 'target'));
+        if (Number.isFinite(t.stopPrice)) priceLinesRef.current.push(mk(t.stopPrice, COLORS.down, 'stop'));
+        if (Number.isFinite(t.targetPrice)) priceLinesRef.current.push(mk(t.targetPrice, COLORS.up, 'target'));
       }
     }
   };
@@ -311,7 +314,7 @@ export default function Chart({ candles, series, buy, enabled, sim, ranged = fal
       markers.push({ time: toTime(candles[t.entryIndex].openTime), position: 'belowBar', shape: 'arrowUp', color: COLORS.gold, text: 'buy' });
       markers.push({
         time: toTime(candles[t.exitIndex].openTime), position: 'aboveBar', shape: 'arrowDown',
-        color: t.reason === 'target' ? COLORS.up : COLORS.down, text: `${t.eur > 0 ? "+" : t.eur < 0 ? "−" : ""}€${Math.abs(t.eur).toFixed(0)}`,
+        color: t.eur >= 0 ? COLORS.up : COLORS.down, text: `${t.eur > 0 ? "+" : t.eur < 0 ? "−" : ""}€${Math.abs(t.eur).toFixed(0)}`,
       });
     }
     for (const t of sim.openTrades) {

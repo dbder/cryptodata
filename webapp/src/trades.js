@@ -9,7 +9,12 @@
 //   'pct' — entry × (1 ∓ stopLoss/takeProfit);
 //   'atr' — entry ∓ stopAtr/targetAtr × ATR(14) at the entry candle, so exits are
 //   wide on volatile coins and tight on calm ones. A signal during the ATR warmup
-//   (first 14 candles) cannot be sized and is ignored.
+//   (first 14 candles) cannot be sized and is ignored;
+//   'rsi' — no target price: the trade is sold at the first close whose RSI is
+//   at or above `rsiExit` (overbought). Needs the `rsi` series (aligned with the
+//   candles) passed in. By default there is no stop loss either — a losing trade
+//   stays open until the RSI recovers; pass `rsiStopLoss` (a fraction, like
+//   stopLoss) to also sell when the close drops that far below entry.
 // - A fee (default 0.25%) is paid on the buy and again on the sell.
 // - With `skipWhileOpen` (default) signals that arrive while a trade is open are
 //   ignored (reported as `skipped`); without it every signal opens its own trade,
@@ -25,6 +30,7 @@ export const DEFAULT_STOP_LOSS = 0.08;    // sell if the candle closes 8% or mor
 export const DEFAULT_TAKE_PROFIT = 0.25;  // sell if the candle closes 25% or more above entry
 export const DEFAULT_STOP_ATR = 2;        // 'atr' mode: stop this many ATRs below entry
 export const DEFAULT_TARGET_ATR = 4;      // 'atr' mode: target this many ATRs above entry
+export const DEFAULT_RSI_EXIT = 80;       // 'rsi' mode: sell when the close's RSI reaches this (0–100)
 export const ATR_PERIOD = 14;
 export const DEFAULT_STAKE_EUR = 100;    // euros put into every trade
 export const DEFAULT_FEE = 0.0025;        // 0.25% per buy and per sell
@@ -42,6 +48,9 @@ export function simulateTrades(candles, buy, {
   takeProfit = DEFAULT_TAKE_PROFIT,
   stopAtr = DEFAULT_STOP_ATR,
   targetAtr = DEFAULT_TARGET_ATR,
+  rsiExit = DEFAULT_RSI_EXIT,
+  rsi = null,               // RSI series per candle, required for exitMode 'rsi'
+  rsiStopLoss = null,       // 'rsi' mode: optional stop loss fraction; null = no stop
   stake = DEFAULT_STAKE_EUR,
   fee = DEFAULT_FEE,
   skipWhileOpen = true,
@@ -58,17 +67,26 @@ export function simulateTrades(candles, buy, {
     : null;
   /** Stop/target prices for a trade entered at candle `i`; null when the ATR is still warming up. */
   const exitPrices = (entry, i) => {
+    if (exitMode === 'rsi') return rsiStopLoss != null ? { stopPrice: entry * (1 - rsiStopLoss) } : {};
     if (!atrSeries) return { stopPrice: entry * (1 - stopLoss), targetPrice: entry * (1 + takeProfit) };
     const a = atrSeries[i];
     if (Number.isNaN(a)) return null;
     return { stopPrice: entry - stopAtr * a, targetPrice: entry + targetAtr * a };
+  };
+  /** Why the trade must be sold at candle `i`'s close, or null to stay in. */
+  const exitReason = (open, c, i) => {
+    if (exitMode === 'rsi') {
+      if (c.close <= open.stopPrice) return 'stop';   // optional safety net; without one stopPrice is undefined and this never fires
+      return rsi && rsi[i] >= rsiExit ? 'rsi' : null;   // NaN (warmup) never fires
+    }
+    return c.close <= open.stopPrice ? 'stop' : c.close >= open.targetPrice ? 'target' : null;
   };
 
   for (let i = firstIndex; i <= lastIndex; i++) {
     const c = candles[i];
 
     opens = opens.filter((open) => {
-      const reason = c.close <= open.stopPrice ? 'stop' : c.close >= open.targetPrice ? 'target' : null;
+      const reason = exitReason(open, c, i);
       if (!reason) return true;
       const move = c.close / open.entry - 1;
       const eur = tradeResultEur(stake, open.entry, c.close, fee);

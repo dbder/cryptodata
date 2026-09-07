@@ -4,7 +4,7 @@ import AllCoinsModal from './AllCoins.jsx';
 import DateField from './DateField.jsx';
 import { computeAll } from './indicators.js';
 import { INDICATORS, DEFAULT_PARAMS, combineBuySignals } from './signals.js';
-import { simulateTrades, DEFAULT_STOP_LOSS, DEFAULT_TAKE_PROFIT, DEFAULT_STOP_ATR, DEFAULT_TARGET_ATR, ATR_PERIOD, DEFAULT_STAKE_EUR, DEFAULT_FEE } from './trades.js';
+import { simulateTrades, DEFAULT_STOP_LOSS, DEFAULT_TAKE_PROFIT, DEFAULT_STOP_ATR, DEFAULT_TARGET_ATR, DEFAULT_RSI_EXIT, ATR_PERIOD, DEFAULT_STAKE_EUR, DEFAULT_FEE } from './trades.js';
 
 const EMPTY = { closes: [], rsi: [], stochRsi: [], k: [], d: [], macd: [], signal: [], hist: [], bbUpper: [], bbMiddle: [], bbLower: [] };
 const VALID_IND = INDICATORS.map((i) => i.id);
@@ -17,11 +17,13 @@ function fromUrl() {
     interval: q.get('interval') || '1d',
     enabled: (q.get('ind') || '').split(',').filter((x) => VALID_IND.includes(x)),
     mode: q.get('mode') === 'any' ? 'any' : 'all',
-    exitMode: q.get('exit') === 'atr' ? 'atr' : 'pct',
+    exitMode: ['atr', 'rsi'].includes(q.get('exit')) ? q.get('exit') : 'pct',
     stopPct: numOr(q.get('stop'), DEFAULT_STOP_LOSS * 100),
     targetPct: numOr(q.get('target'), DEFAULT_TAKE_PROFIT * 100),
     stopAtr: numOr(q.get('stopatr'), DEFAULT_STOP_ATR),
     targetAtr: numOr(q.get('targetatr'), DEFAULT_TARGET_ATR),
+    rsiSell: numOr(q.get('rsisell'), DEFAULT_RSI_EXIT),
+    rsiStop: q.get('rsistop') === '1',
     stake: numOr(q.get('stake'), DEFAULT_STAKE_EUR),
     feePct: numOr(q.get('fee'), DEFAULT_FEE * 100),
     skipWhileOpen: q.get('skip') !== '0',
@@ -92,6 +94,8 @@ export default function App() {
   const [targetPct, setTargetPct] = useState(initial.targetPct);
   const [stopAtr, setStopAtr] = useState(initial.stopAtr);
   const [targetAtr, setTargetAtr] = useState(initial.targetAtr);
+  const [rsiSell, setRsiSell] = useState(initial.rsiSell);
+  const [rsiStop, setRsiStop] = useState(initial.rsiStop);   // 'rsi' exit: also use the % stop loss
   const [stake, setStake] = useState(initial.stake);
   const [feePct, setFeePct] = useState(initial.feePct);
   const [skipWhileOpen, setSkipWhileOpen] = useState(initial.skipWhileOpen);
@@ -106,7 +110,7 @@ export default function App() {
 
   // Keep the URL in sync with the selection.
   useEffect(() => {
-    const q = new URLSearchParams({ market, interval, ind: enabled.join(','), mode, exit: exitMode, stop: stopPct, target: targetPct, stopatr: stopAtr, targetatr: targetAtr, stake, fee: feePct, skip: skipWhileOpen ? '1' : '0', mine: showMine ? '1' : '0', vol: showVolume ? '1' : '0' });
+    const q = new URLSearchParams({ market, interval, ind: enabled.join(','), mode, exit: exitMode, stop: stopPct, target: targetPct, stopatr: stopAtr, targetatr: targetAtr, rsisell: rsiSell, rsistop: rsiStop ? '1' : '0', stake, fee: feePct, skip: skipWhileOpen ? '1' : '0', mine: showMine ? '1' : '0', vol: showVolume ? '1' : '0' });
     if (from) q.set('from', from);
     if (to) q.set('to', to);
     q.set('rsi', params.rsiMax);
@@ -114,7 +118,7 @@ export default function App() {
     q.set('sma', params.smaPeriod);
     q.set('smadir', params.smaDir);
     window.history.replaceState(null, '', `?${q}`);
-  }, [market, interval, enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, stake, feePct, skipWhileOpen, showMine, showVolume, from, to, params]);
+  }, [market, interval, enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, rsiSell, rsiStop, stake, feePct, skipWhileOpen, showMine, showVolume, from, to, params]);
 
   // The user's own trades from the ledger; missing ledger → [] (a failure here is not fatal for the charts).
   useEffect(() => {
@@ -157,8 +161,8 @@ export default function App() {
   const series = useMemo(() => (candles.length ? computeAll(candles) : EMPTY), [candles]);
   const buy = useMemo(() => combineBuySignals(series, enabled, mode, params), [series, enabled, mode, params]);
   const sim = useMemo(
-    () => simulateTrades(candles, buy, { exitMode, stopLoss: stopPct / 100, takeProfit: targetPct / 100, stopAtr, targetAtr, stake, fee: feePct / 100, skipWhileOpen, from: fromMs(from), to: toMs(to) }),
-    [candles, buy, exitMode, stopPct, targetPct, stopAtr, targetAtr, stake, feePct, skipWhileOpen, from, to]
+    () => simulateTrades(candles, buy, { exitMode, stopLoss: stopPct / 100, takeProfit: targetPct / 100, stopAtr, targetAtr, rsiExit: rsiSell, rsiStopLoss: rsiStop ? stopPct / 100 : null, rsi: series.rsi, stake, fee: feePct / 100, skipWhileOpen, from: fromMs(from), to: toMs(to) }),
+    [candles, buy, series, exitMode, stopPct, targetPct, stopAtr, targetAtr, rsiSell, rsiStop, stake, feePct, skipWhileOpen, from, to]
   );
 
   const intervals = markets.find((m) => m.market === market)?.intervals ?? ['1d'];
@@ -179,8 +183,8 @@ export default function App() {
   const last = candles.at(-1);
   // Everything the simulation depends on besides the candles — handed to the all-coins modal.
   const config = useMemo(
-    () => ({ enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, stake, feePct, skipWhileOpen, from: fromMs(from), to: toMs(to), params }),
-    [enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, stake, feePct, skipWhileOpen, from, to, params]
+    () => ({ enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, rsiSell, rsiStop, stake, feePct, skipWhileOpen, from: fromMs(from), to: toMs(to), params }),
+    [enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, rsiSell, rsiStop, stake, feePct, skipWhileOpen, from, to, params]
   );
   const activePreset = RANGE_PRESETS.find((p) => (p.months === null ? !from && !to : from === monthsAgo(p.months) && !to))?.label;
   const inRange = sim.lastIndex - sim.firstIndex + 1;
@@ -298,8 +302,26 @@ export default function App() {
           <div className="segmented">
             <button className={exitMode === 'pct' ? 'active' : ''} onClick={() => setExitMode('pct')} title="stop and target at a fixed % from entry">%</button>
             <button className={exitMode === 'atr' ? 'active' : ''} onClick={() => setExitMode('atr')} title={`stop and target at a multiple of ATR(${ATR_PERIOD}) at entry: wide exits on volatile coins, tight on calm ones, so one config compares across coins`}>ATR</button>
+            <button className={exitMode === 'rsi' ? 'active' : ''} onClick={() => setExitMode('rsi')} title="sell at the first close with RSI(14) at or above the level (overbought). No stop loss: a losing trade stays open until the RSI recovers">RSI</button>
           </div>
-          {exitMode === 'pct' ? (
+          {exitMode === 'rsi' ? (
+            <>
+              <span className="pct-input" title="RSI runs 0–100 here; 80 is the same line as 0.8 on a 0–1 scale">
+                RSI ≥ <input type="number" min="50" max="100" step="1" value={rsiSell}
+                  onChange={(e) => setRsiSell(numOr(e.target.value, rsiSell))} />
+              </span>
+              <label className="check" title="safety net: also sell when the close is this far below entry, instead of waiting for the RSI to recover">
+                <input type="checkbox" checked={rsiStop} onChange={(e) => setRsiStop(e.target.checked)} />
+                stop
+              </label>
+              {rsiStop && (
+                <span className="pct-input">
+                  <input type="number" min="0.5" step="0.5" value={stopPct}
+                    onChange={(e) => setStopPct(numOr(e.target.value, stopPct))} /> % down
+                </span>
+              )}
+            </>
+          ) : exitMode === 'pct' ? (
             <>
               <span className="pct-input">
                 <input type="number" min="0.5" step="0.5" value={stopPct}

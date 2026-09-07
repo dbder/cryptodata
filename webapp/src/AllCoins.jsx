@@ -89,10 +89,10 @@ export default function AllCoinsModal({ markets, interval, config, onClose }) {
 
   // One simulation per coin with the current configuration.
   const rows = useMemo(() => {
-    const { enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, stake, feePct, skipWhileOpen, from, to, params } = config;
+    const { enabled, mode, exitMode, stopPct, targetPct, stopAtr, targetAtr, rsiSell, rsiStop, stake, feePct, skipWhileOpen, from, to, params } = config;
     return Object.entries(loaded).map(([market, { candles, series }]) => {
       const buy = combineBuySignals(series, enabled, mode, params);
-      const sim = simulateTrades(candles, buy, { exitMode, stopLoss: stopPct / 100, takeProfit: targetPct / 100, stopAtr, targetAtr, stake, fee: feePct / 100, skipWhileOpen, from, to });
+      const sim = simulateTrades(candles, buy, { exitMode, stopLoss: stopPct / 100, takeProfit: targetPct / 100, stopAtr, targetAtr, rsiExit: rsiSell, rsiStopLoss: rsiStop ? stopPct / 100 : null, rsi: series.rsi, stake, fee: feePct / 100, skipWhileOpen, from, to });
       return {
         market, category: categoryOf(market, overrides),
         trades: sim.trades.length, wins: sim.wins, losses: sim.losses,
@@ -138,7 +138,7 @@ export default function AllCoinsModal({ markets, interval, config, onClose }) {
           <span className="muted">
             {config.enabled.length === 0
               ? 'no indicator enabled — turn one on to simulate buys'
-              : `${config.enabled.join(' + ')} (${config.mode}) · stop ${config.stopPct}% · target ${config.targetPct}% · €${config.stake} per trade · ${config.feePct}% fee${rangeLabel(config)}`}
+              : `${config.enabled.join(' + ')} (${config.mode}) · ${exitLabel(config)} · €${config.stake} per trade · ${config.feePct}% fee${rangeLabel(config)}`}
           </span>
           <button className="close" onClick={onClose} aria-label="close">×</button>
         </header>
@@ -265,6 +265,12 @@ function loadExcluded() {
     return Array.isArray(list) ? list.filter((id) => CATEGORIES.some((c) => c.id === id)) : [];
   } catch { return []; }
 }
+
+/** The sell rule of the config, in the unit of its exit mode. */
+const exitLabel = (c) =>
+  c.exitMode === 'rsi' ? `sell at RSI ≥ ${c.rsiSell}${c.rsiStop ? ` · stop ${c.stopPct}%` : ''}`
+  : c.exitMode === 'atr' ? `stop ${c.stopAtr}×ATR · target ${c.targetAtr}×ATR`
+  : `stop ${c.stopPct}% · target ${c.targetPct}%`;
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 const rangeLabel = ({ from, to }) =>
