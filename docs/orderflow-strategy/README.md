@@ -44,6 +44,7 @@ trapped and about to be forced out.
 | [03-confirmation.md](03-confirmation.md) | Footprint candles, volume & delta profiles, absorption, the two-failure entry trigger |
 | [04-trade-management.md](04-trade-management.md) | Stops, targets, trailing, the 1.5–2R / 60–65% win-rate profile, the 20k-contract volume filter |
 | [05-process-discipline.md](05-process-discipline.md) | Rules with teeth, good vs bad losses, A/B/C-game sessions, tilt triggers and shutoffs |
+| [06-crypto-bot.md](06-crypto-bot.md) | This strategy as a backtest + paper-trading bot for Bitvavo (`nl.debo.cryptodata.bot`) |
 
 ## Key facts from the interview
 
