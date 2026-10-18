@@ -28,8 +28,10 @@ import java.util.List;
  * <p>Besides the exchange intervals the run adds a two-day view: {@code 2d}
  * candles merged from pairs of daily candles ({@link DerivedInterval#twoDays()}),
  * analysed with the same indicators. Bitvavo has no such interval itself,
- * so it is derived from the {@code 1d} store. Those rows get the second tab
- * of the XLSX ("2d Results"); the CSV lists them with interval {@code 2d}.</p>
+ * so it is derived from the {@code 1d} store. Those rows sit between the
+ * other intervals on the first XLSX tab (per symbol 1M, 1W, 2d, 1d) and are
+ * repeated on their own second tab ("2d Results"); the CSV lists them with
+ * interval {@code 2d}.</p>
  *
  * <p>Reports land in {@code output/data-bitvavo-local<date>.csv/.xlsx}, so a
  * run of {@link CryptoAnalysisBitvavo} on the same day can be compared

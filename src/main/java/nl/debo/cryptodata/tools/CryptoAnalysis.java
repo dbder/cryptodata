@@ -26,9 +26,9 @@ import java.util.concurrent.Executors;
  *
  * <p>Optionally the run also covers {@link DerivedInterval}s the exchange
  * does not offer, such as {@code 2d} merged from {@code 1d} candles. Their
- * rows go to the same CSV as the others (recognisable by the interval) but
- * get a tab of their own in the XLSX, after the main tab with the exchange
- * intervals.</p>
+ * rows go to the same CSV and the same main XLSX tab as the others
+ * (recognisable by the interval) and additionally get a tab of their own in
+ * the XLSX, after the main tab.</p>
  */
 public final class CryptoAnalysis {
 
@@ -90,7 +90,7 @@ public final class CryptoAnalysis {
     /**
      * Pipeline that reports on {@code derivedIntervals} as well: each one is
      * computed from its base interval's candles (see {@link DerivedInterval})
-     * and lands on its own XLSX tab.
+     * and lands on the main XLSX tab as well as on a tab of its own.
      *
      * @param derivedIntervals intervals to merge from exchange candles, e.g.
      *                         {@link DerivedInterval#twoDays()}; may be empty
@@ -185,14 +185,14 @@ public final class CryptoAnalysis {
     }
 
     /**
-     * The XLSX tabs: the exchange intervals on the first tab, then one tab per
-     * derived interval named after it ({@code "2d Results"}). Rows keep the
-     * sorted order they arrive in.
+     * The XLSX tabs: every row (exchange and derived intervals together, so a
+     * symbol reads as 1M, 1W, 2d, 1d) on the first tab, then one tab per
+     * derived interval named after it ({@code "2d Results"}) holding just
+     * that interval's rows. Rows keep the sorted order they arrive in.
      */
     private List<XslxPrinter.Sheet> sheets(List<ResultRow> results) {
         var sheets = new ArrayList<XslxPrinter.Sheet>();
-        sheets.add(new XslxPrinter.Sheet(XslxPrinter.DEFAULT_SHEET_NAME,
-                results.stream().filter(r -> intervals.contains(r.interval())).toList()));
+        sheets.add(new XslxPrinter.Sheet(XslxPrinter.DEFAULT_SHEET_NAME, results));
         for (DerivedInterval derived : derivedIntervals) {
             sheets.add(new XslxPrinter.Sheet(derived.name() + " Results",
                     results.stream().filter(r -> r.interval().equals(derived.name())).toList()));
