@@ -11,11 +11,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: robCryptoData-macos
-            binary: target/robCryptoData
+            artifact: cryptodata-macos
+            binary: target/cryptodata
           - os: windows-latest
-            artifact: robCryptoData-windows
-            binary: target/robCryptoData.exe
+            artifact: cryptodata-windows
+            binary: target/cryptodata.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

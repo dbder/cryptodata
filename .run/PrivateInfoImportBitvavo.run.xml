@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="PrivateInfoImportBitvavo" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="nl.debo.cryptodata.PrivateInfoImportBitvavo" />
-    <module name="robCryptoData" />
+    <module name="cryptodata" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="nl.debo.cryptodata.*" />
