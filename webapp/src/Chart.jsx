@@ -82,7 +82,7 @@ export function ownTradeMarkers(candles, ownTrades) {
 }
 
 const HOUR = 3600 * 1000;
-const INTERVAL_MS = { '1h': HOUR, '2h': 2 * HOUR, '4h': 4 * HOUR, '6h': 6 * HOUR, '8h': 8 * HOUR, '12h': 12 * HOUR, '1d': 24 * HOUR, '1W': 7 * 24 * HOUR };
+const INTERVAL_MS = { '1h': HOUR, '2h': 2 * HOUR, '4h': 4 * HOUR, '6h': 6 * HOUR, '8h': 8 * HOUR, '12h': 12 * HOUR, '1d': 24 * HOUR, '2d': 2 * 24 * HOUR, '1W': 7 * 24 * HOUR };
 const MAX_PENDING_SLOTS = 500;   // how far past the store the pending bars may reach (a very stale store on 1h)
 
 /** Open time (ms) of the candle after the one opening at `openTime`; `fallbackMs` when the interval is unknown. */

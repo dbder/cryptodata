@@ -9,7 +9,9 @@ npm install      # first time only
 npm run dev      # opens http://localhost:5173
 ```
 
-- **Coin / timeframe** — every `<market>_<interval>.csv` in the store (1h … 1M).
+- **Coin / timeframe** — every `<market>_<interval>.csv` in the store (1h … 1M), plus `2d`: pairs of
+  daily candles merged on the fly by the dev server (same rules as the Java `DerivedInterval`, so it
+  matches the "2d" rows of the report), listed between 1d and 1W.
   Coins you actually traded (ledger `../output/balance-bitvavo/trades.csv`, written by
   `PrivateInfoImportBitvavo`) are listed first, most recent transaction on top, marked ★.
 - **★ my N trades** — your real buys (blue arrow below the bar) and sells (purple arrow above)
