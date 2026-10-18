@@ -2,6 +2,12 @@
 
 Hier houden we bij wat er verandert in het project.
 
+## [18] - 2026-10-18
+
+### Nieuw
+- `CryptoAnalysisBitvavo` voegt een tweedaagse statistiek toe: naast `1d`, `1W` en `1M` rekent de run ook `2d` uit, een interval dat Bitvavo zelf niet kent. De `2d`-candles worden uit de dagcandles van de lokale opslag gebouwd (nieuwe record `DerivedInterval`: steeds twee opeenvolgende dagen samengevoegd — open van de eerste dag, close van de laatste, hoogste high, laagste low, volumes opgeteld), geteld vanaf de nieuwste gesloten dagcandle zodat de laatste `2d`-candle altijd compleet en actueel is; een nog open dagcandle en een losse dag aan het oude eind vallen af. Daarop draaien dezelfde indicatoren als op de andere intervallen. Het XLSX-rapport krijgt er een tweede tabblad "2d Results" bij met dezelfde kolommen en opmaak; het eerste tabblad "Crypto Results" blijft zoals het was. In de CSV staan de `2d`-rijen gewoon tussen de andere, herkenbaar aan de interval-kolom.
+- Onder de motorkap: `DerivedIntervalKlineSource` is een `KlineSource`-schil die een aanvraag voor een afgeleid interval beantwoordt door het basisinterval (met `factor` × zoveel candles) op te halen en samen te voegen; andere intervallen gaan ongewijzigd door. `CryptoAnalysis` heeft een extra constructor met een lijst `DerivedInterval`s (de bestaande constructors blijven werken zonder afgeleide intervallen), en `XslxPrinter.writeSheets` schrijft een werkmap met meerdere tabbladen (`XslxPrinter.Sheet`); `write` met één lijst rijen bestaat nog en maakt één tabblad.
+
 ## [17] - 2026-08-19
 
 ### Nieuw

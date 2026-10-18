@@ -15,7 +15,9 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * Writes a nicely styled, sortable Microsoft Excel (.xlsx) spreadsheet from a
- * list of {@link ResultRow} values.
+ * list of {@link ResultRow} values, on one tab or spread over several
+ * {@link Sheet}s (e.g. the exchange intervals on the first tab and a derived
+ * interval on its own tab).
  *
  * <p>The file is produced as a raw OOXML (SpreadsheetML) package, so no external
  * libraries are required. The layout focuses on readability:
@@ -34,6 +36,22 @@ import java.util.zip.ZipOutputStream;
 public final class XslxPrinter {
 
     private XslxPrinter() {
+    }
+
+    /** Name of the tab when the report is written as a single sheet. */
+    public static final String DEFAULT_SHEET_NAME = "Crypto Results";
+
+    /** Excel refuses longer tab names. */
+    private static final int MAX_SHEET_NAME_LENGTH = 31;
+
+    /** One tab of the workbook: its name and the rows on it. All tabs share the same columns. */
+    public record Sheet(String name, List<ResultRow> rows) {
+        public Sheet {
+            if (name.isBlank() || name.length() > MAX_SHEET_NAME_LENGTH) {
+                throw new IllegalArgumentException(
+                        "Sheet name must be 1.." + MAX_SHEET_NAME_LENGTH + " characters: '" + name + "'");
+            }
+        }
     }
 
     /** How a column's cells are styled: text left, text centered, or a number with 2 or 4 decimals. */
@@ -118,7 +136,8 @@ public final class XslxPrinter {
     );
 
     /**
-     * Generates the spreadsheet.
+     * Generates the spreadsheet with all rows on a single tab named
+     * {@link #DEFAULT_SHEET_NAME}.
      *
      * @param xlsxPath   destination file
      * @param dateStr    report date, used in document metadata
@@ -127,18 +146,38 @@ public final class XslxPrinter {
      *                   indicators are left out
      */
     public static void write(Path xlsxPath, String dateStr, List<ResultRow> results, Set<Indicator> indicators) {
+        writeSheets(xlsxPath, dateStr, List.of(new Sheet(DEFAULT_SHEET_NAME, results)), indicators);
+    }
+
+    /**
+     * Generates the spreadsheet with one tab per {@link Sheet}, in the given
+     * order; the first tab is the one selected when the file opens.
+     *
+     * @param xlsxPath   destination file
+     * @param dateStr    report date, used in document metadata
+     * @param sheets     the tabs to render, at least one
+     * @param indicators the indicators of the run; columns of other
+     *                   indicators are left out
+     */
+    public static void writeSheets(Path xlsxPath, String dateStr, List<Sheet> sheets, Set<Indicator> indicators) {
+        if (sheets.isEmpty()) {
+            throw new IllegalArgumentException("A workbook needs at least one sheet");
+        }
         List<Column> columns = COLUMNS.stream()
                 .filter(c -> c.shownFor(indicators))
                 .toList();
         try (var zipOut = new ZipOutputStream(Files.newOutputStream(xlsxPath))) {
-            writeEntry(zipOut, "[Content_Types].xml", contentTypesXml());
+            writeEntry(zipOut, "[Content_Types].xml", contentTypesXml(sheets.size()));
             writeEntry(zipOut, "_rels/.rels", rootRelsXml());
             writeEntry(zipOut, "docProps/core.xml", corePropsXml(dateStr));
             writeEntry(zipOut, "docProps/app.xml", appPropsXml());
-            writeEntry(zipOut, "xl/workbook.xml", workbookXml());
-            writeEntry(zipOut, "xl/_rels/workbook.xml.rels", workbookRelsXml());
+            writeEntry(zipOut, "xl/workbook.xml", workbookXml(sheets));
+            writeEntry(zipOut, "xl/_rels/workbook.xml.rels", workbookRelsXml(sheets.size()));
             writeEntry(zipOut, "xl/styles.xml", stylesXml());
-            writeEntry(zipOut, "xl/worksheets/sheet1.xml", sheetXml(columns, results));
+            for (int i = 0; i < sheets.size(); i++) {
+                writeEntry(zipOut, "xl/worksheets/sheet" + (i + 1) + ".xml",
+                        sheetXml(columns, sheets.get(i).rows(), i == 0));
+            }
 
             System.out.println(ConsoleColor.green("Successfully generated XLSX report: " + xlsxPath));
         } catch (Exception e) {
@@ -152,19 +191,23 @@ public final class XslxPrinter {
         zipOut.closeEntry();
     }
 
-    private static String contentTypesXml() {
+    private static String contentTypesXml(int sheetCount) {
+        var worksheets = new StringBuilder();
+        for (int i = 1; i <= sheetCount; i++) {
+            worksheets.append("  <Override PartName=\"/xl/worksheets/sheet").append(i)
+                    .append(".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\n");
+        }
         return """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
                   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
                   <Default Extension="xml" ContentType="application/xml"/>
                   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-                  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-                  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+                %s  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
                   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
                   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
                 </Types>
-                """;
+                """.formatted(worksheets);
     }
 
     private static String rootRelsXml() {
@@ -203,26 +246,37 @@ public final class XslxPrinter {
                 """;
     }
 
-    private static String workbookXml() {
+    /** Sheet {@code i} (1-based) is worksheets/sheet{@code i}.xml behind relationship rId{@code i}. */
+    private static String workbookXml(List<Sheet> sheets) {
+        var entries = new StringBuilder();
+        for (int i = 1; i <= sheets.size(); i++) {
+            entries.append(String.format("    <sheet name=\"%s\" sheetId=\"%d\" r:id=\"rId%d\"/>\n",
+                    XmlUtil.escapeXml(sheets.get(i - 1).name()), i, i));
+        }
         return """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
                           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
                   <sheets>
-                    <sheet name="Crypto Results" sheetId="1" r:id="rId1"/>
-                  </sheets>
+                %s  </sheets>
                 </workbook>
-                """;
+                """.formatted(entries);
     }
 
-    private static String workbookRelsXml() {
+    /** The styles part gets the relationship id after the last sheet. */
+    private static String workbookRelsXml(int sheetCount) {
+        var entries = new StringBuilder();
+        for (int i = 1; i <= sheetCount; i++) {
+            entries.append("  <Relationship Id=\"rId").append(i)
+                    .append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet")
+                    .append(i).append(".xml\"/>\n");
+        }
         return """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+                %s  <Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
                 </Relationships>
-                """;
+                """.formatted(entries, sheetCount + 1);
     }
 
     /**
@@ -293,7 +347,8 @@ public final class XslxPrinter {
                 """;
     }
 
-    private static String sheetXml(List<Column> columns, List<ResultRow> results) {
+    /** @param selected whether this is the tab shown when the file opens (exactly one should be) */
+    private static String sheetXml(List<Column> columns, List<ResultRow> results, boolean selected) {
         int lastRow = results.size() + 1;
         var sb = new StringBuilder();
         sb.append("""
@@ -304,12 +359,12 @@ public final class XslxPrinter {
         // Freeze the header row.
         sb.append("""
                   <sheetViews>
-                    <sheetView tabSelected="1" workbookViewId="0">
+                    <sheetView tabSelected="%d" workbookViewId="0">
                       <pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>
                       <selection pane="bottomLeft" activeCell="A2" sqref="A2"/>
                     </sheetView>
                   </sheetViews>
-                """);
+                """.formatted(selected ? 1 : 0));
 
         sb.append("  <sheetFormatPr defaultRowHeight=\"15\"/>\n");
 

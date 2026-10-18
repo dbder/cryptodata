@@ -23,6 +23,12 @@ import java.util.concurrent.Executors;
  *
  * <p>Everything exchange-specific comes in through the constructor: the
  * client, the symbols file, the interval names and the indicator selection.
+ *
+ * <p>Optionally the run also covers {@link DerivedInterval}s the exchange
+ * does not offer, such as {@code 2d} merged from {@code 1d} candles. Their
+ * rows go to the same CSV as the others (recognisable by the interval) but
+ * get a tab of their own in the XLSX, after the main tab with the exchange
+ * intervals.</p>
  */
 public final class CryptoAnalysis {
 
@@ -40,6 +46,7 @@ public final class CryptoAnalysis {
     private final KlineSource client;
     private final String symbolsFileName;
     private final List<String> intervals;
+    private final List<DerivedInterval> derivedIntervals;
     private final Set<Indicator> indicators;
     private final String outputBaseName;
     private final LocalDate reportDate;
@@ -77,9 +84,30 @@ public final class CryptoAnalysis {
             String outputBaseName,
             LocalDate reportDate
     ) {
-        this.client = client;
+        this(client, symbolsFileName, intervals, List.of(), indicators, outputBaseName, reportDate);
+    }
+
+    /**
+     * Pipeline that reports on {@code derivedIntervals} as well: each one is
+     * computed from its base interval's candles (see {@link DerivedInterval})
+     * and lands on its own XLSX tab.
+     *
+     * @param derivedIntervals intervals to merge from exchange candles, e.g.
+     *                         {@link DerivedInterval#twoDays()}; may be empty
+     */
+    public CryptoAnalysis(
+            KlineSource client,
+            String symbolsFileName,
+            List<String> intervals,
+            List<DerivedInterval> derivedIntervals,
+            Set<Indicator> indicators,
+            String outputBaseName,
+            LocalDate reportDate
+    ) {
+        this.client = DerivedIntervalKlineSource.wrap(client, derivedIntervals);
         this.symbolsFileName = symbolsFileName;
-        this.intervals = intervals;
+        this.intervals = List.copyOf(intervals);
+        this.derivedIntervals = List.copyOf(derivedIntervals);
         this.indicators = Set.copyOf(indicators);
         this.outputBaseName = outputBaseName;
         this.reportDate = reportDate;
@@ -112,15 +140,21 @@ public final class CryptoAnalysis {
                 .filter(s -> !s.isEmpty() && !s.startsWith("#"))
                 .toList();
 
+        // The exchange intervals plus the derived ones; the decorated client
+        // knows which is which.
+        List<String> allIntervals = new ArrayList<>(intervals);
+        derivedIntervals.forEach(d -> allIntervals.add(d.name()));
+
         System.out.println(ConsoleColor.green(
                 "Crypto analysis started: " + activeSymbols.size() + " symbols x "
-                        + intervals.size() + " intervals, indicators: " + Indicator.describe(indicators)));
+                        + allIntervals.size() + " intervals " + allIntervals
+                        + ", indicators: " + Indicator.describe(indicators)));
 
         List<ResultRow> results = Collections.synchronizedList(new ArrayList<>());
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<CompletableFuture<Void>> futures = activeSymbols.parallelStream()
-                    .flatMap(symbol -> intervals.stream().map(interval ->
+                    .flatMap(symbol -> allIntervals.stream().map(interval ->
                             client.getKlinesAsync(symbol, interval, KLINE_LIMIT)
                                     .thenAcceptAsync(klines ->
                                             analyzer.latestRow(symbol, interval, klines)
@@ -144,10 +178,26 @@ public final class CryptoAnalysis {
                 .thenComparing(row -> intervalMillis(row.interval()), Comparator.reverseOrder()));
 
         CsvUtil.appendResultRows(csvPath, results);
-        XslxPrinter.write(xlsxPath, dateStr, results, indicators);
+        XslxPrinter.writeSheets(xlsxPath, dateStr, sheets(results), indicators);
 
         System.out.println(ConsoleColor.green(
                 "Crypto analysis finished: " + results.size() + " rows -> " + csvPath + " and " + xlsxPath));
+    }
+
+    /**
+     * The XLSX tabs: the exchange intervals on the first tab, then one tab per
+     * derived interval named after it ({@code "2d Results"}). Rows keep the
+     * sorted order they arrive in.
+     */
+    private List<XslxPrinter.Sheet> sheets(List<ResultRow> results) {
+        var sheets = new ArrayList<XslxPrinter.Sheet>();
+        sheets.add(new XslxPrinter.Sheet(XslxPrinter.DEFAULT_SHEET_NAME,
+                results.stream().filter(r -> intervals.contains(r.interval())).toList()));
+        for (DerivedInterval derived : derivedIntervals) {
+            sheets.add(new XslxPrinter.Sheet(derived.name() + " Results",
+                    results.stream().filter(r -> r.interval().equals(derived.name())).toList()));
+        }
+        return sheets;
     }
 
     /**

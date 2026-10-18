@@ -2,12 +2,14 @@ package nl.debo.cryptodata;
 
 import nl.debo.cryptodata.tools.BitvavoClient;
 import nl.debo.cryptodata.tools.CryptoAnalysis;
+import nl.debo.cryptodata.tools.DerivedInterval;
 import nl.debo.cryptodata.tools.Indicator;
 import nl.debo.cryptodata.tools.KlineHistoryImporter;
 import nl.debo.cryptodata.tools.LocalKlineSource;
 import nl.debo.cryptodata.utils.FileUtil;
 
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -23,6 +25,12 @@ import java.util.List;
  * STOCH-RSI, K, D, MACD and MADR, one per line (see {@link Indicator}). A file
  * of the same name next to the application overrides the resource.</p>
  *
+ * <p>Besides the exchange intervals the run adds a two-day view: {@code 2d}
+ * candles merged from pairs of daily candles ({@link DerivedInterval#twoDays()}),
+ * analysed with the same indicators. Bitvavo has no such interval itself,
+ * so it is derived from the {@code 1d} store. Those rows get the second tab
+ * of the XLSX ("2d Results"); the CSV lists them with interval {@code 2d}.</p>
+ *
  * <p>Reports land in {@code output/data-bitvavo-local<date>.csv/.xlsx}, so a
  * run of {@link CryptoAnalysisBitvavo} on the same day can be compared
  * against them one to one.</p>
@@ -30,6 +38,8 @@ import java.util.List;
 public final class CryptoAnalysisBitvavo {
 
     private static final List<String> INTERVALS = List.of("1d", "1W", "1M");
+    /** Intervals computed from the ones above instead of fetched: the two-day statistics tab. */
+    private static final List<DerivedInterval> DERIVED_INTERVALS = List.of(DerivedInterval.twoDays());
     /** Resource / file naming the indicators to report on, one per line. */
     private static final String INDICATORS_FILE = "indicators";
 
@@ -43,8 +53,10 @@ public final class CryptoAnalysisBitvavo {
                 new LocalKlineSource(klinesDir, new KlineHistoryImporter(new BitvavoClient(), klinesDir)),
                 "symbols-bitvavo",
                 INTERVALS,
+                DERIVED_INTERVALS,
                 Indicator.readSelection(CryptoAnalysisBitvavo.class, INDICATORS_FILE),
-                "data-bitvavo-local"
+                "data-bitvavo-local",
+                LocalDate.now()
         ).run();
     }
 }
